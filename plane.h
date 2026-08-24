@@ -24,7 +24,7 @@ class Airplane
         vec2 latLon {0.0f};
         float velocity = 0.0f;
         float heading = 0.0f;
-        float scale = 0.1f;
+        float scale = 0.005f;
         mat4 cachedModelMatrix {1.0f};
         bool changed = true;
 };

@@ -3,6 +3,8 @@
 #include <GLFW/glfw3.h>
 #include "misc.h"
 #include "plane.h"
+#include "glb_reader.h"
+#include "bindgroup_manager.h"
 #include <webgpu/webgpu_cpp.h>
 #include <glm/gtc/quaternion.hpp>
 #include <emscripten.h>
@@ -14,7 +16,7 @@ constexpr uint32_t WIN_WIDTH = 512;
 constexpr uint32_t WIN_HEIGHT = 512;
 constexpr wgpu::TextureFormat DEPTH_TEXTURE_FORMAT = wgpu::TextureFormat::Depth24Plus;
 
-constexpr float CAMERA_SPEED = 3.0f;
+constexpr float CAMERA_SPEED = 1.0f;
 constexpr vec3 CAMERA_UP {0.0f, 1.0f, 0.0f};
 constexpr float FOV = 1.047198f;
 constexpr uint32_t MAX_PLANES = 30000;
@@ -58,11 +60,14 @@ class Application
         int32_t vertexCount = 0;
         std::unique_ptr<DepthManager> depthManager;
         BindGroupManager mainBindGroup;
+        TextureResource planeTexture;
         
         wgpu::Buffer vertexBuffer;
+        wgpu::Buffer indexBuffer;
         wgpu::Buffer instanceBuffer;
         wgpu::Buffer uniformBuffer;
         
+        uint32_t indexCount = 0;
         uint16_t planesCount = 0;
         Airplane planes[MAX_PLANES];
         glm::mat4 instanceData[MAX_PLANES];

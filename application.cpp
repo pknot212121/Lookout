@@ -1,4 +1,5 @@
 #include "application.h"
+#include "misc.h"
 #include "webgpu/webgpu_cpp.h"
 #include <cstdint>
 #include <emscripten/emscripten.h>
@@ -6,13 +7,29 @@
 void Application::initializeBuffers()
 {
     Timer t1("initializeBuffers");
-    std::vector<VertexAttributes> vertexData;
-    bool success = loadGeometryFromObj(RESOURCE_DIR "/plane2.obj", vertexData);
+    GlbReader reader;
+    bool success = reader.loadGlbModel(RESOURCE_DIR "/plane.glb");
     assert(success);
-    vertexBuffer = createBuffer(device, "vertex_buffer", vertexData.size() * sizeof(VertexAttributes), wgpu::BufferUsage::Vertex);
-    device.GetQueue().WriteBuffer(vertexBuffer, 0, vertexData.data(), vertexData.size() * sizeof(VertexAttributes));
-    vertexCount = static_cast<int32_t>(vertexData.size());
-    
+    const GlbModelData& modelData = reader.getData();
+    vertexBuffer = createBuffer(device, "vertex_buffer", modelData.vertices.size() * sizeof(VertexAttributes), wgpu::BufferUsage::Vertex);
+    device.GetQueue().WriteBuffer(vertexBuffer, 0, modelData.vertices.data(), modelData.vertices.size() * sizeof(VertexAttributes));
+    vertexCount = static_cast<int32_t>(modelData.vertices.size());
+
+    indexBuffer = createBuffer(device, "index_buffer", modelData.indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
+    device.GetQueue().WriteBuffer(indexBuffer, 0, modelData.indices.data(), modelData.indices.size() * sizeof(uint32_t));
+    indexCount = static_cast<uint32_t>(modelData.indices.size());
+
+    if (!modelData.textureData.empty())
+    {
+        planeTexture = createTextureFromBytes(device, modelData.textureData.data(), modelData.texWidth, modelData.texHeight);
+    }
+    else
+    {
+        std::cerr << "Texture not found, defaulting to white." << std::endl;
+        uint8_t whitePixel[] = { 255, 255, 255, 255 };
+        planeTexture = createTextureFromBytes(device, whitePixel, 1, 1);
+    }
+
     instanceBuffer = createBuffer(device, "instance", MAX_PLANES * sizeof(mat4), wgpu::BufferUsage::Storage);
     uniformBuffer = createBuffer(device, "uniform buffer", sizeof(MyUniforms), wgpu::BufferUsage::Uniform);
 
@@ -39,7 +56,7 @@ void Application::initializePipeline()
     assert(shader);
     wgpu::ColorTargetState target{.format = surfaceFormat,};
 
-    DynamicVertexLayout vertexLayout({3, 3, 3});
+    DynamicVertexLayout vertexLayout({3, 3, 2});
     depthManager = std::make_unique<DepthManager>(DEPTH_TEXTURE_FORMAT, device, WIN_WIDTH, WIN_HEIGHT);
 
     wgpu::FragmentState fragState {
@@ -52,6 +69,8 @@ void Application::initializePipeline()
 
     mainBindGroup.addBuffer(0, uniformBuffer, sizeof(MyUniforms), wgpu::BufferBindingType::Uniform);
     mainBindGroup.addBuffer(1, instanceBuffer, MAX_PLANES * sizeof(mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
+    mainBindGroup.addTexture(2, planeTexture.view);
+    mainBindGroup.addSampler(3, planeTexture.sampler);
     mainBindGroup.build(device);
     wgpu::BindGroupLayout bindGroupLayout = mainBindGroup.getLayout();
     wgpu::PipelineLayoutDescriptor layoutDesc {
@@ -248,8 +267,9 @@ void Application::renderFrame()
     auto pass = encoder.BeginRenderPass(&renderPass);
     pass.SetPipeline(pipeline);
     pass.SetVertexBuffer(0, vertexBuffer, 0, vertexBuffer.GetSize());
+    pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0, indexBuffer.GetSize());
     mainBindGroup.bind(pass, 0);
-    pass.Draw(vertexCount, static_cast<uint32_t>(planesCount), 0, 0);
+    pass.DrawIndexed(indexCount, static_cast<uint32_t>(planesCount), 0, 0);
     pass.End();
 
     auto commands = encoder.Finish();

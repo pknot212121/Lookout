@@ -1,4 +1,4 @@
-#include <numeric>
+#pragma once
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -26,8 +26,7 @@
 using glm::mat4x4;
 using glm::vec4;
 using glm::vec3;
-
-namespace fs = std::filesystem;
+using glm::vec2;
 
 struct Timer
 {
@@ -41,6 +40,88 @@ struct Timer
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         std::cout << "[Timer] " << name << ": " << duration << " ms" << std::endl; 
     }
+};
+
+struct TextureResource
+{
+    wgpu::Texture texture;
+    wgpu::TextureView view;
+    wgpu::Sampler sampler;
+};
+
+inline TextureResource createTextureFromBytes(const wgpu::Device& device, const uint8_t* data, int width, int height, wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm)
+{
+    if (!data || width <= 0 || height <= 0)
+    {
+        std::cerr << "[Texture creator] Texture data is invalid" << std::endl;
+        return {};
+    }
+
+    uint32_t uWidth = static_cast<uint32_t>(width);
+    uint32_t uHeight = static_cast<uint32_t>(height);
+    wgpu::TextureDescriptor textureDesc {
+        .label = "Model Texture",
+        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+        .dimension = wgpu::TextureDimension::e2D,
+        .size = { uWidth, uHeight, 1 },
+        .format = format,
+        .mipLevelCount = 1,
+        .sampleCount = 1,
+    };
+    wgpu::Texture texture = device.CreateTexture(&textureDesc);
+    wgpu::TexelCopyTextureInfo destination {
+        .texture = texture,
+        .mipLevel = 0,
+        .origin = { 0, 0, 0 },
+        .aspect = wgpu::TextureAspect::All,
+    };
+    wgpu::TexelCopyBufferLayout source {
+        .offset = 0,
+        .bytesPerRow = 4 * uWidth,
+        .rowsPerImage = uHeight,
+    };
+    wgpu::Extent3D writeSize {
+        .width = uWidth,
+        .height = uHeight,
+        .depthOrArrayLayers = 1,
+    };
+    device.GetQueue().WriteTexture(
+        &destination, 
+        data, 
+        static_cast<size_t>(uWidth * uHeight * 4), 
+        &source, 
+        &writeSize
+    );
+    wgpu::TextureViewDescriptor viewDesc {
+        .label = "Model Texture View",
+        .format = format,
+        .dimension = wgpu::TextureViewDimension::e2D,
+        .baseMipLevel = 0,
+        .mipLevelCount = 1,
+        .baseArrayLayer = 0,
+        .arrayLayerCount = 1,
+        .aspect = wgpu::TextureAspect::All,
+    };
+    wgpu::TextureView view = texture.CreateView(&viewDesc);
+    wgpu::SamplerDescriptor samplerDesc {
+        .label = "Model Texture Sampler",
+        .addressModeU = wgpu::AddressMode::Repeat,
+        .addressModeV = wgpu::AddressMode::Repeat,
+        .addressModeW = wgpu::AddressMode::Repeat,
+        .magFilter = wgpu::FilterMode::Linear,
+        .minFilter = wgpu::FilterMode::Linear,
+        .mipmapFilter = wgpu::MipmapFilterMode::Linear,
+    };
+    wgpu::Sampler sampler = device.CreateSampler(&samplerDesc);
+    return { texture, view, sampler };
+}
+
+
+struct VertexAttributes
+{
+    vec3 position;
+    vec3 normal;
+    vec2 uv;
 };
 
 class DynamicVertexLayout 
@@ -139,173 +220,6 @@ class DepthManager
         wgpu::Texture depthTexture;
         wgpu::DepthStencilState depthStencilState;
 };
-
-class BindGroupManager
-{
-    public:
-        struct BufferEntry
-        {
-            uint32_t binding;
-            wgpu::Buffer buffer;
-            uint64_t size;
-            wgpu::BufferBindingType type;
-            wgpu::ShaderStage visibility;
-        };
-
-        BindGroupManager& addBuffer(
-            uint32_t binding,
-            wgpu::Buffer buffer,
-            uint64_t size,
-            wgpu::BufferBindingType type,
-            wgpu::ShaderStage visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment)
-        {
-            entries.push_back({binding, buffer, size, type, visibility});
-            return *this;
-        }
-
-        void build(wgpu::Device device)
-        {
-            std::vector<wgpu::BindGroupLayoutEntry> layoutEntries;
-            std::vector<wgpu::BindGroupEntry> groupEntries;
-            layoutEntries.reserve(entries.size());
-            groupEntries.reserve(entries.size());
-
-            for (const auto& entry : entries)
-            {
-                layoutEntries.push_back(wgpu::BindGroupLayoutEntry {
-                    .binding = entry.binding,
-                    .visibility = entry.visibility,
-                    .buffer = {
-                        .type = entry.type,
-                        .minBindingSize = entry.size,
-                    }
-                });
-                groupEntries.push_back(wgpu::BindGroupEntry {
-                    .binding = entry.binding,
-                    .buffer = entry.buffer,
-                    .offset = 0,
-                    .size = entry.size,
-                });
-            }
-            wgpu::BindGroupLayoutDescriptor layoutDesc {
-                .entryCount = static_cast<uint32_t>(layoutEntries.size()),
-                .entries = layoutEntries.data(),
-            };
-            layout = device.CreateBindGroupLayout(&layoutDesc);
-            
-            wgpu::BindGroupDescriptor groupDesc {
-                .layout = layout,
-                .entryCount = static_cast<uint32_t>(groupEntries.size()),
-                .entries = groupEntries.data(),
-            };
-            bindGroup = device.CreateBindGroup(&groupDesc);
-        }
-
-        void bind(wgpu::RenderPassEncoder pass, uint32_t groupIndex) const 
-        {
-            pass.SetBindGroup(groupIndex, bindGroup);
-        }
-
-        wgpu::BindGroupLayout getLayout() const {return layout;}
-        wgpu::BindGroup getBindGroup() const {return bindGroup;}
-        
-    private:
-        std::vector<BufferEntry>(entries);
-        wgpu::BindGroupLayout layout;
-        wgpu::BindGroup bindGroup;
-};
-
-struct VertexAttributes
-{
-    vec3 position;
-    vec3 normal;
-    vec3 color;
-};
-
-inline bool loadGeometryFromObj(const fs::path& path, std::vector<VertexAttributes>& vertexData) {
-    Timer t8("loadGeometryfromObj");
-    tinyobj::ObjReader reader;
-    tinyobj::ObjReaderConfig readerConfig;
-    readerConfig.triangulate = true;
-
-    readerConfig.mtl_search_path = path.parent_path().string();
-
-    if (!reader.ParseFromFile(path.string(), readerConfig))
-    {
-        if (!reader.Error().empty())
-        {
-            std::cerr << "TinyObjReader Error: " << reader.Error() << std::endl;
-        }
-        return false;
-    }
-
-    if (!reader.Warning().empty())
-    {
-        std::cout << "TinyObjReader Warning: " << reader.Warning() << std::endl;
-    }
-
-    const auto& attrib = reader.GetAttrib();
-    const auto& shapes = reader.GetShapes();
-    const auto& materials = reader.GetMaterials();
-    
-    size_t offset = std::accumulate(shapes.begin(), shapes.end(), 0, []
-        (size_t total, auto& shape){return total + shape.mesh.indices.size();});
-    vertexData.resize(offset);
-
-    offset = 0;
-    for (const auto& shape : shapes)
-    {
-        for (size_t i = 0; i < shape.mesh.indices.size(); i++)
-        {
-            const tinyobj::index_t& idx = shape.mesh.indices[i];
-
-            vertexData[offset + i].position = {
-                attrib.vertices[3 * idx.vertex_index + 0],
-                -attrib.vertices[3 * idx.vertex_index + 2],
-                attrib.vertices[3 * idx.vertex_index + 1]
-            };
-
-            if (idx.normal_index >= 0)
-            {
-                vertexData[offset + i].normal = {
-                    attrib.normals[3 * idx.normal_index + 0],
-                    -attrib.normals[3 * idx.normal_index + 2],
-                    attrib.normals[3 * idx.normal_index + 1]
-                };
-            }
-            else
-            {
-                vertexData[offset + i].normal = {0.0f, 1.0f, 0.0f};
-            }
-
-            vec3 finalColor {1.0f};
-            size_t faceIndex = i / 3;
-            if (faceIndex < shape.mesh.material_ids.size())
-            {
-                int matId = shape.mesh.material_ids[faceIndex];
-                if (matId >= 0 && matId < static_cast<int>(materials.size()))
-                {
-                    finalColor = {
-                        materials[matId].diffuse[0],
-                        materials[matId].diffuse[1],
-                        materials[matId].diffuse[2],
-                    };
-                }
-            }
-            else if (!attrib.colors.empty())
-            {
-                finalColor = {
-                    attrib.colors[3 * idx.vertex_index + 0],
-                    attrib.colors[3 * idx.vertex_index + 1],
-                    attrib.colors[3 * idx.vertex_index + 2]
-                };
-            }
-            vertexData[offset + i].color = finalColor;
-        }
-        offset += shape.mesh.indices.size();
-    }
-    return true;
-}
 
 inline wgpu::Buffer createBuffer(const wgpu::Device& device, std::string_view label, uint64_t size_in_bytes, wgpu::BufferUsage usage)
 {

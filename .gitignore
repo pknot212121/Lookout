@@ -10,3 +10,6 @@ dawn
 .vscode/
 .clangd/
 .clangd
+*.jpg
+*.tif
+*.glb

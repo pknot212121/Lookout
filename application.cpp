@@ -1,4 +1,5 @@
 #include "application.h"
+#include "glm/ext/matrix_transform.hpp"
 #include "misc.h"
 #include "webgpu/webgpu_cpp.h"
 #include <cstdint>
@@ -23,12 +24,29 @@ void Application::initializeBuffers()
     {
         planeTexture = createTextureFromBytes(device, modelData.textureData.data(), modelData.texWidth, modelData.texHeight);
     }
-    else
+
+    GlbReader earthReader;
+    bool earthOk = earthReader.loadGlbModel(RESOURCE_DIR "/earth.glb");
+    assert(earthOk);
+    const GlbModelData& earthData = earthReader.getData();
+
+    earthVertexBuffer = createBuffer(device, "earth_vertex_buffer", earthData.vertices.size() * sizeof(VertexAttributes), wgpu::BufferUsage::Vertex);
+    device.GetQueue().WriteBuffer(earthVertexBuffer, 0, earthData.vertices.data(), earthData.vertices.size() * sizeof(VertexAttributes));
+    earthIndexCount = static_cast<uint32_t>(earthData.indices.size());
+
+    earthIndexBuffer = createBuffer(device, "earth_index_buffer", earthData.indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
+    device.GetQueue().WriteBuffer(earthIndexBuffer, 0, earthData.indices.data(), earthData.indices.size() * sizeof(uint32_t));
+
+    if (!earthData.textureData.empty())
     {
-        std::cerr << "Texture not found, defaulting to white." << std::endl;
-        uint8_t whitePixel[] = { 255, 255, 255, 255 };
-        planeTexture = createTextureFromBytes(device, whitePixel, 1, 1);
+        earthTexture = createTextureFromBytes(device, earthData.textureData.data(), earthData.texWidth, earthData.texHeight);
     }
+
+    glm::mat4 earthModelMatrix = glm::mat4(1.0f);
+    earthModelMatrix = glm::scale(earthModelMatrix, glm::vec3(PLANET_RADIUS));
+    earthModelMatrix = glm::translate(earthModelMatrix, glm::vec3(0, -1, 0));
+    earthInstanceBuffer = createBuffer(device, "earth_instance_buffer", sizeof(glm::mat4), wgpu::BufferUsage::Storage);
+    device.GetQueue().WriteBuffer(earthInstanceBuffer, 0, &earthModelMatrix, sizeof(glm::mat4));
 
     instanceBuffer = createBuffer(device, "instance", MAX_PLANES * sizeof(mat4), wgpu::BufferUsage::Storage);
     uniformBuffer = createBuffer(device, "uniform buffer", sizeof(MyUniforms), wgpu::BufferUsage::Uniform);
@@ -72,6 +90,13 @@ void Application::initializePipeline()
     mainBindGroup.addTexture(2, planeTexture.view);
     mainBindGroup.addSampler(3, planeTexture.sampler);
     mainBindGroup.build(device);
+
+    earthBindGroup.addBuffer(0, uniformBuffer, sizeof(MyUniforms), wgpu::BufferBindingType::Uniform);
+    earthBindGroup.addBuffer(1, earthInstanceBuffer, sizeof(mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
+    earthBindGroup.addTexture(2, earthTexture.view);
+    earthBindGroup.addSampler(3, earthTexture.sampler);
+    earthBindGroup.build(device);
+
     wgpu::BindGroupLayout bindGroupLayout = mainBindGroup.getLayout();
     wgpu::PipelineLayoutDescriptor layoutDesc {
         .bindGroupLayoutCount = 1,
@@ -266,6 +291,12 @@ void Application::renderFrame()
 
     auto pass = encoder.BeginRenderPass(&renderPass);
     pass.SetPipeline(pipeline);
+
+    pass.SetVertexBuffer(0, earthVertexBuffer, 0, earthVertexBuffer.GetSize());
+    pass.SetIndexBuffer(earthIndexBuffer, wgpu::IndexFormat::Uint32, 0, earthIndexBuffer.GetSize());
+    earthBindGroup.bind(pass, 0);
+    pass.DrawIndexed(earthIndexCount, 1, 0, 0, 0);
+
     pass.SetVertexBuffer(0, vertexBuffer, 0, vertexBuffer.GetSize());
     pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0, indexBuffer.GetSize());
     mainBindGroup.bind(pass, 0);

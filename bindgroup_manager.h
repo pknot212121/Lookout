@@ -79,7 +79,7 @@ class BindGroupManager
                     .visibility = entry.visibility,
                     .buffer = {
                         .type = entry.type,
-                        .minBindingSize = entry.size,
+                        .minBindingSize = 0,
                     }
                 });
                 groupEntries.push_back(wgpu::BindGroupEntry {

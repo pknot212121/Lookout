@@ -97,7 +97,6 @@ void GlbReader::processNode(uint32_t nodeIdx, const glm::mat4& parentMatrix)
     }
     if (node.mesh < 0 || (uint32_t)node.mesh >= model.meshes_count)
     {
-        std::cout << "No mesh found in node!" << std::endl;
         return;
     }
     const tg3_mesh& mesh = model.meshes[node.mesh];

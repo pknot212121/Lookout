@@ -7,7 +7,7 @@ using glm::vec3;
 using glm::vec4;
 using glm::mat4;
 
-constexpr float PLANET_RADIUS = 100.0f;
+constexpr float ORBIT_RADIUS = 100.0f;
 constexpr float REAL_EARTH_RADIUS_METERS = 6'371'000.0f;
 constexpr vec3 WORLD_NORTH {0.0f, 1.0f, 0.0f};
 

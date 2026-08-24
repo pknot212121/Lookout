@@ -24,6 +24,7 @@ constexpr float SENSITIVITY = 0.1f;
 constexpr float LONG_FETCH_COOLDOWN = 122.0f;
 constexpr float SHORT_FETCH_COOLDOWN = 3.0f;
 constexpr uint32_t HEADER_OFFSET = 4;
+constexpr float PLANET_RADIUS = 90.0f;
 
 using glm::quat;
 
@@ -66,6 +67,13 @@ class Application
         wgpu::Buffer indexBuffer;
         wgpu::Buffer instanceBuffer;
         wgpu::Buffer uniformBuffer;
+
+        wgpu::Buffer earthVertexBuffer;
+        wgpu::Buffer earthIndexBuffer;
+        wgpu::Buffer earthInstanceBuffer;
+        uint32_t earthIndexCount = 0;
+        TextureResource earthTexture;
+        BindGroupManager earthBindGroup;
         
         uint32_t indexCount = 0;
         uint16_t planesCount = 0;

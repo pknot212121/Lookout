@@ -48,9 +48,9 @@ mat4 Airplane::getModelMatrix()
     float lonRad = glm::radians(latLon.y);
 
     vec3 pos {
-        PLANET_RADIUS * std::cos(latRad) * std::cos(lonRad),
-        PLANET_RADIUS * std::sin(latRad),
-        PLANET_RADIUS * std::cos(latRad) * std::sin(lonRad),
+        ORBIT_RADIUS * std::cos(latRad) * std::cos(lonRad),
+        ORBIT_RADIUS * std::sin(latRad),
+        ORBIT_RADIUS * std::cos(latRad) * std::sin(lonRad),
     };
 
     vec3 up = glm::normalize(pos);
@@ -64,9 +64,9 @@ mat4 Airplane::getModelMatrix()
     vec3 right = glm::cross(forward, up);
 
     mat4 model {
-        vec4(forward, 0.0f), // lokalna oś X modelu (Dziób)
-        vec4(right, 0.0f),   // lokalna oś Y modelu (Prawe skrzydło)
-        vec4(up, 0.0f),      // lokalna oś Z modelu (Góra)
+        vec4(right, 0.0f), // lokalna oś X modelu (Dziób)
+        vec4(up, 0.0f),   // lokalna oś Y modelu (Prawe skrzydło)
+        vec4(forward, 0.0f),      // lokalna oś Z modelu (Góra)
         vec4(pos, 1.0f),     // Pozycja
     };
 

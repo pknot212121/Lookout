@@ -1,4 +1,6 @@
-# FlightMarcher
+# Lookout
 
-- A website like flightradar24 that renders earth as a 3d raymarched sphere
-- Written in dawn webgpu
+- A website like flightradar24 that render all flights in 3D
+- Lightweight and memory efficient
+- Cool visual effects
+- Written in dawn webgpu (may not work on linux without experimental settings)

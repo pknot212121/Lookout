@@ -65,6 +65,10 @@ add_executable(App
     bindgroup_manager.h
 )
 
+set_property(TARGET App APPEND PROPERTY 
+    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/shader.wgsl"
+)
+
 if(EMSCRIPTEN)
     execute_process(
         COMMAND embuilder build emdawnwebgpu

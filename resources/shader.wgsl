@@ -32,7 +32,7 @@ fn vs(in: VertexInput) -> VertexOutput
 	let modelMatrix = instanceModels[in.instanceIdx];
 	let worldPos = modelMatrix * vec4f(in.position, 1.0);
 	out.position = globalUniforms.projectionMatrix * globalUniforms.viewMatrix * worldPos;
-	out.uv = in.uv;
+	out.uv = vec2(1.0 - in.uv.x, in.uv.y);
 	return out;
 }
 

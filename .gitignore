@@ -7,9 +7,6 @@ dawn
 */compile_commands.json
 *.obj
 *.mtl
-.vscode/
-.clangd/
-.clangd
 *.jpg
 *.tif
 *.glb

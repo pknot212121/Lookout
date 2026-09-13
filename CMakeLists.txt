@@ -8,7 +8,6 @@ set(CMAKE_BUILD_TYPE Release)
 
 include(FetchContent)
 
-# 1. Standardowe zależności
 FetchContent_Declare(
     glm
     GIT_REPOSITORY  https://github.com/g-truc/glm.git
@@ -54,7 +53,6 @@ if(NOT tinygltf_POPULATED)
     target_link_libraries(tinygltf PRIVATE stb::stb)
 endif()
 
-# 2. Target aplikacji
 add_executable(App 
     main.cpp
     misc.h
@@ -68,12 +66,10 @@ add_executable(App
 )
 
 if(EMSCRIPTEN)
-    # Zapewnij pobranie portu do lokalnego cache emsdk (jeśli jeszcze nie ma)
     execute_process(
         COMMAND embuilder build emdawnwebgpu
     )
 
-    # Dynamiczne ścieżki do nagłówków w EMSDK – trafią prosto do compile_commands.json!
     target_include_directories(App PRIVATE
         "${EMSCRIPTEN_ROOT_PATH}/cache/ports/emdawnwebgpu/emdawnwebgpu_pkg/webgpu/include"
         "${EMSCRIPTEN_ROOT_PATH}/cache/ports/emdawnwebgpu/emdawnwebgpu_pkg/webgpu_cpp/include"

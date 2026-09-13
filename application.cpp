@@ -54,7 +54,7 @@ void Application::initializeBuffers()
     wgpu::Limits limits;
     device.GetLimits(&limits);
 
-    mat4x4 V = glm::lookAt(cameraPos, cameraPos + cameraFront, CAMERA_UP);
+    mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
     mat4x4 P = glm::perspective(FOV, 1.0f, 0.01f, 1000.0f);
     projectionMatrix = P;
     MyUniforms uniformValues {
@@ -139,12 +139,6 @@ bool Application::initializeGLFW()
     }
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glfwSetWindowUserPointer(window, this);
-    glfwSetCursorPosCallback(window, [](GLFWwindow* w, double xpos, double ypos)
-    {
-        auto app = static_cast<Application*>(glfwGetWindowUserPointer(w));
-        if (app)
-            app->handleMouse({xpos, ypos});
-    });
     return true;
 }
 
@@ -240,7 +234,6 @@ void Application::renderFrame()
 {
     assert(device && pipeline);
     glfwPollEvents();
-    processInput();
 
     double currentTime = emscripten_get_now();
     if (lastFrameTime == 0.0) lastFrameTime = currentTime;
@@ -250,9 +243,11 @@ void Application::renderFrame()
     if (dt > 0.1f) dt = 0.1f;
     fetchCooldown -= dt;
 
+    processInput(dt);
+
     if (fetchCooldown < 0.0) fetchPlanesOnDemand();
 
-    mat4x4 V = glm::lookAt(cameraPos, cameraPos + cameraFront, CAMERA_UP);
+    mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
     MyUniforms uniformValues {
         .projectionMatrix = projectionMatrix,
         .viewMatrix = V,
@@ -376,37 +371,29 @@ void Application::onResize(uint32_t width, uint32_t height)
     projectionMatrix = glm::perspective(FOV, aspect, 0.01f, 1000.0f);
 }
 
-void Application::processInput()
+void Application::processInput(float dt)
 {
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        cameraPos += CAMERA_SPEED * cameraFront;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        cameraPos -= CAMERA_SPEED * cameraFront;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        cameraPos += glm::normalize(glm::cross(cameraFront, CAMERA_UP)) * CAMERA_SPEED;
+    float speed = CAMERA_SPEED * dt;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        cameraPos -= glm::normalize(glm::cross(cameraFront, CAMERA_UP)) * CAMERA_SPEED;
-    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
-        fetchPlanesOnDemand();
-}
+        yaw += speed;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        yaw -= speed;
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        pitch += speed;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        pitch -= speed;
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        cameraDistance -= speed * 100.0f;
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        cameraDistance += speed * 100.0f;
+    pitch = glm::clamp(pitch, -MAX_PITCH, MAX_PITCH);
+    updateCameraPosition();
 }
 
-void Application::handleMouse(vec2 pos)
+void Application::updateCameraPosition()
 {
-    if (firstClick)
-    {
-        lastXY = pos;
-        firstClick = false;
-    }
-
-    vec2 offset = lastXY - pos;
-    lastXY = pos;
-    offset *= SENSITIVITY;
-    
-    quat qYaw = glm::angleAxis(glm::radians(-offset.x), vec3(0.0f, 1.0f, 0.0f));
-    vec3 right = glm::normalize(glm::cross(cameraFront, CAMERA_UP));
-    quat qPitch = glm::angleAxis(glm::radians(offset.y), right);
-
-    quat totalRotation = qPitch * qYaw;
-    cameraFront = glm::normalize(totalRotation * cameraFront);
+    float x = cameraDistance * cos(pitch) * cos(yaw);
+    float y = cameraDistance * sin(pitch);
+    float z = cameraDistance * cos(pitch) * sin(yaw);
+    cameraPos = vec3(x, y, z);
 }

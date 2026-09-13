@@ -18,13 +18,15 @@ constexpr wgpu::TextureFormat DEPTH_TEXTURE_FORMAT = wgpu::TextureFormat::Depth2
 
 constexpr float CAMERA_SPEED = 1.0f;
 constexpr vec3 CAMERA_UP {0.0f, 1.0f, 0.0f};
+constexpr vec3 CENTER_POINT {0.0f, 0.0f, 0.0f};
 constexpr float FOV = 1.047198f;
 constexpr uint32_t MAX_PLANES = 30000;
-constexpr float SENSITIVITY = 0.1f;
 constexpr float LONG_FETCH_COOLDOWN = 122.0f;
 constexpr float SHORT_FETCH_COOLDOWN = 3.0f;
 constexpr uint32_t HEADER_OFFSET = 4;
 constexpr float PLANET_RADIUS = 90.0f;
+constexpr float ROTATION_SPEED = glm::half_pi<float>();
+constexpr float MAX_PITCH = glm::half_pi<float>() - 0.01f;
 
 using glm::quat;
 
@@ -36,13 +38,13 @@ class Application
         bool initializeGLFW();
         bool initialize();
         void renderFrame();
+        void updateCameraPosition();
         void fetchPlanesOnDemand();
         void onResize(uint32_t width, uint32_t height);
         void onAdapterReady(wgpu::RequestAdapterStatus status, wgpu::Adapter adapt, wgpu::StringView message);
         void onDeviceReady(wgpu::RequestDeviceStatus status, wgpu::Device dev, wgpu::StringView message);
     private:
-        void processInput();
-        void handleMouse(vec2 pos);
+        void processInput(float dt);
         void updatePlanes(const float* data, int sizeInBytes);
         struct MyUniforms
         {
@@ -81,9 +83,10 @@ class Application
         glm::mat4 instanceData[MAX_PLANES];
         mat4x4 projectionMatrix;
 
-        vec3 cameraPos {0.0f, 0.0f, 200.0f};
-        vec3 cameraFront {0.0f, 0.0f, -1.0f};
-        vec2 yawPitch {-90.0f, 0.0f};
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        vec3 cameraPos = {0.0f, 0.0f, 200.0f};
+        float cameraDistance = 200.0f;
         vec2 lastXY = {WIN_WIDTH / 2.0f, WIN_HEIGHT / 2.0f};
 
         double lastFrameTime = 0.0;

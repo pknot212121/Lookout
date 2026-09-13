@@ -55,14 +55,20 @@ endif()
 
 add_executable(App 
     main.cpp
-    misc.h
     application.h
     application.cpp
     plane.h
     plane.cpp
     glb_reader.h
     glb_reader.cpp
+    cube_sphere.h
+    cube_sphere.cpp
     bindgroup_manager.h
+    vertex_layout.hpp
+    timer.h
+    gpu_utils.h
+    gpu_utils.cpp
+    depth_manager.hpp
 )
 
 set_property(TARGET App APPEND PROPERTY 

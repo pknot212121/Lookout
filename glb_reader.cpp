@@ -8,6 +8,9 @@
 #include "tiny_gltf_v3.h"
 #include <cstddef>
 #include <cstdint>
+#include <iostream>
+#include "timer.h"
+
 
 template<typename T>
 void appendIndicies(const uint8_t* data, size_t count, uint32_t baseVertexIndex, std::vector<uint32_t>& outIndicies)
@@ -134,7 +137,7 @@ void GlbReader::processNode(uint32_t nodeIdx, const glm::mat4& parentMatrix)
 
         for (size_t i = 0; i < posAcc->count; i++)
         {
-            VertexAttributes vert{};
+            gpuUtils::VertexAttributes vert{};
             glm::vec4 localPos(posPtr[i * posStride + 0], posPtr[i * posStride + 1], posPtr[i * posStride + 2], 1.0f);
             vert.position = glm::vec3(worldMatrix * localPos);
 

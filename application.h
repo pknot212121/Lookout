@@ -1,15 +1,17 @@
 #include <cstdint>
 #include <memory>
 #include <GLFW/glfw3.h>
-#include "misc.h"
 #include "plane.h"
 #include "glb_reader.h"
 #include "bindgroup_manager.h"
+#include "gpu_utils.h"
 #include <webgpu/webgpu_cpp.h>
 #include <glm/gtc/quaternion.hpp>
 #include <emscripten.h>
 #include <emscripten/html5.h>
 #include <emscripten/fetch.h>
+#include "cube_sphere.h"
+#include "depth_manager.hpp"
 
 constexpr float PI = 3.14159265358979323846f;
 constexpr uint32_t WIN_WIDTH = 512;
@@ -48,8 +50,8 @@ class Application
         void updatePlanes(const float* data, int sizeInBytes);
         struct MyUniforms
         {
-            mat4x4 projectionMatrix;
-            mat4x4 viewMatrix;
+            glm::mat4x4 projectionMatrix;
+            glm::mat4x4 viewMatrix;
         };
         static_assert(sizeof(MyUniforms) % 16 == 0);
 
@@ -63,31 +65,31 @@ class Application
         int32_t vertexCount = 0;
         std::unique_ptr<DepthManager> depthManager;
         BindGroupManager mainBindGroup;
-        TextureResource planeTexture;
+        gpuUtils::TextureResource planeTexture;
         
         wgpu::Buffer vertexBuffer;
         wgpu::Buffer indexBuffer;
         wgpu::Buffer instanceBuffer;
         wgpu::Buffer uniformBuffer;
-
-        wgpu::Buffer earthVertexBuffer;
-        wgpu::Buffer earthIndexBuffer;
         wgpu::Buffer earthInstanceBuffer;
-        uint32_t earthIndexCount = 0;
-        TextureResource earthTexture;
+
+        CubeSphere earthSphere;
+
+        gpuUtils::TextureResource earthTexture;
         BindGroupManager earthBindGroup;
         
         uint32_t indexCount = 0;
         uint16_t planesCount = 0;
         Airplane planes[MAX_PLANES];
         glm::mat4 instanceData[MAX_PLANES];
-        mat4x4 projectionMatrix;
+        glm::mat4x4 projectionMatrix;
 
         float yaw = 0.0f;
         float pitch = 0.0f;
-        vec3 cameraPos = {0.0f, 0.0f, 200.0f};
+        bool arePlanesVisible = false;
+        glm::vec3 cameraPos = {0.0f, 0.0f, 200.0f};
         float cameraDistance = 200.0f;
-        vec2 lastXY = {WIN_WIDTH / 2.0f, WIN_HEIGHT / 2.0f};
+        glm::vec2 lastXY = {WIN_WIDTH / 2.0f, WIN_HEIGHT / 2.0f};
 
         double lastFrameTime = 0.0;
         uint32_t lastBatchId = 0;

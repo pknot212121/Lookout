@@ -1,9 +1,50 @@
 #include "application.h"
 #include "glm/ext/matrix_transform.hpp"
-#include "misc.h"
+#include <iostream>
 #include "webgpu/webgpu_cpp.h"
 #include <cstdint>
 #include <emscripten/emscripten.h>
+#include "timer.h"
+#include "vertex_layout.hpp"
+
+namespace //glfw and webgpu callbacks
+{
+    void glfwError (int code, const char* message)
+    {
+        std::cerr << "GLFW error: " << code << ":" << message;
+        assert(false);
+    }
+
+    void adapterRequest(wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message, wgpu::Adapter* data)
+    {
+        if (status != wgpu::RequestAdapterStatus::Success) {
+            std::cout << "Adapter request failed: " << std::string_view(message);
+            exit(1);
+        }
+        *data = adapter;
+    }
+
+    void deviceLost([[maybe_unused]] const wgpu::Device& device, wgpu::DeviceLostReason reason, struct wgpu::StringView message)
+    {
+        if (message == std::string_view("A valid external Instance reference no longer exists.")) {
+            return;
+        }
+        std::cerr << "device lost: \n";
+        if (message.length > 0) {
+            std::cout << ": " << std::string_view(message);
+        }
+        std::cout << std::endl;
+    }
+
+    void uncapturedError ([[maybe_unused]] const wgpu::Device& device, wgpu::ErrorType type, struct wgpu::StringView message)
+    {
+        std::cout << "uncaptured error: \n";
+        if (message.length > 0)
+            std::cerr << ": {}" << std::string_view(message);
+        std::cout << std::endl;
+        assert(false);
+    }
+}
 
 void Application::initializeBuffers()
 {
@@ -12,50 +53,38 @@ void Application::initializeBuffers()
     bool success = reader.loadGlbModel(RESOURCE_DIR "/plane.glb");
     assert(success);
     const GlbModelData& modelData = reader.getData();
-    vertexBuffer = createBuffer(device, "vertex_buffer", modelData.vertices.size() * sizeof(VertexAttributes), wgpu::BufferUsage::Vertex);
-    device.GetQueue().WriteBuffer(vertexBuffer, 0, modelData.vertices.data(), modelData.vertices.size() * sizeof(VertexAttributes));
+    vertexBuffer = gpuUtils::createBuffer(device, "vertex_buffer", modelData.vertices.size() * sizeof(gpuUtils::VertexAttributes), wgpu::BufferUsage::Vertex);
+    device.GetQueue().WriteBuffer(vertexBuffer, 0, modelData.vertices.data(), modelData.vertices.size() * sizeof(gpuUtils::VertexAttributes));
     vertexCount = static_cast<int32_t>(modelData.vertices.size());
 
-    indexBuffer = createBuffer(device, "index_buffer", modelData.indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
+    indexBuffer = gpuUtils::createBuffer(device, "index_buffer", modelData.indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
     device.GetQueue().WriteBuffer(indexBuffer, 0, modelData.indices.data(), modelData.indices.size() * sizeof(uint32_t));
     indexCount = static_cast<uint32_t>(modelData.indices.size());
 
     if (!modelData.textureData.empty())
     {
-        planeTexture = createTextureFromBytes(device, modelData.textureData.data(), modelData.texWidth, modelData.texHeight);
+        planeTexture = gpuUtils::createTextureFromBytes(device, modelData.textureData.data(), modelData.texWidth, modelData.texHeight);
     }
 
-    GlbReader earthReader;
-    bool earthOk = earthReader.loadGlbModel(RESOURCE_DIR "/earth.glb");
-    assert(earthOk);
-    const GlbModelData& earthData = earthReader.getData();
-
-    earthVertexBuffer = createBuffer(device, "earth_vertex_buffer", earthData.vertices.size() * sizeof(VertexAttributes), wgpu::BufferUsage::Vertex);
-    device.GetQueue().WriteBuffer(earthVertexBuffer, 0, earthData.vertices.data(), earthData.vertices.size() * sizeof(VertexAttributes));
-    earthIndexCount = static_cast<uint32_t>(earthData.indices.size());
-
-    earthIndexBuffer = createBuffer(device, "earth_index_buffer", earthData.indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
-    device.GetQueue().WriteBuffer(earthIndexBuffer, 0, earthData.indices.data(), earthData.indices.size() * sizeof(uint32_t));
-
-    if (!earthData.textureData.empty())
-    {
-        earthTexture = createTextureFromBytes(device, earthData.textureData.data(), earthData.texWidth, earthData.texHeight);
-    }
-
+    earthTexture = gpuUtils::loadTextureFromFile(device, RESOURCE_DIR "/earth.jpg");
+    earthSphere.init(device, PLANET_RADIUS, 64);
     glm::mat4 earthModelMatrix = glm::mat4(1.0f);
-    earthModelMatrix = glm::scale(earthModelMatrix, glm::vec3(PLANET_RADIUS));
-    earthModelMatrix = glm::translate(earthModelMatrix, glm::vec3(0, -1, 0));
-    earthInstanceBuffer = createBuffer(device, "earth_instance_buffer", sizeof(glm::mat4), wgpu::BufferUsage::Storage);
+    earthInstanceBuffer = gpuUtils::createBuffer(
+        device, 
+        "earth_instance_buffer", 
+        sizeof(glm::mat4), 
+        wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst
+    );
     device.GetQueue().WriteBuffer(earthInstanceBuffer, 0, &earthModelMatrix, sizeof(glm::mat4));
 
-    instanceBuffer = createBuffer(device, "instance", MAX_PLANES * sizeof(mat4), wgpu::BufferUsage::Storage);
-    uniformBuffer = createBuffer(device, "uniform buffer", sizeof(MyUniforms), wgpu::BufferUsage::Uniform);
+    instanceBuffer = gpuUtils::createBuffer(device, "instance", MAX_PLANES * sizeof(glm::mat4), wgpu::BufferUsage::Storage);
+    uniformBuffer = gpuUtils::createBuffer(device, "uniform buffer", sizeof(MyUniforms), wgpu::BufferUsage::Uniform);
 
     wgpu::Limits limits;
     device.GetLimits(&limits);
 
-    mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
-    mat4x4 P = glm::perspective(FOV, 1.0f, 0.01f, 1000.0f);
+    glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
+    glm::mat4x4 P = glm::perspective(FOV, 1.0f, 0.01f, 1000.0f);
     projectionMatrix = P;
     MyUniforms uniformValues {
         .projectionMatrix = P,
@@ -70,7 +99,7 @@ void Application::initializePipeline()
     Timer t2("initializePipeline");
     assert(surfaceFormat != wgpu::TextureFormat::Undefined);
     assert(vertexBuffer);
-    auto shader = loadShaderModule(RESOURCE_DIR "/shader.wgsl", device);
+    auto shader = gpuUtils::loadShaderModule(RESOURCE_DIR "/shader.wgsl", device);
     assert(shader);
     wgpu::ColorTargetState target{.format = surfaceFormat,};
 
@@ -86,13 +115,13 @@ void Application::initializePipeline()
     };
 
     mainBindGroup.addBuffer(0, uniformBuffer, sizeof(MyUniforms), wgpu::BufferBindingType::Uniform);
-    mainBindGroup.addBuffer(1, instanceBuffer, MAX_PLANES * sizeof(mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
+    mainBindGroup.addBuffer(1, instanceBuffer, MAX_PLANES * sizeof(glm::mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
     mainBindGroup.addTexture(2, planeTexture.view);
     mainBindGroup.addSampler(3, planeTexture.sampler);
     mainBindGroup.build(device);
 
     earthBindGroup.addBuffer(0, uniformBuffer, sizeof(MyUniforms), wgpu::BufferBindingType::Uniform);
-    earthBindGroup.addBuffer(1, earthInstanceBuffer, sizeof(mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
+    earthBindGroup.addBuffer(1, earthInstanceBuffer, sizeof(glm::mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
     earthBindGroup.addTexture(2, earthTexture.view);
     earthBindGroup.addSampler(3, earthTexture.sampler);
     earthBindGroup.build(device);
@@ -247,7 +276,7 @@ void Application::renderFrame()
 
     if (fetchCooldown < 0.0) fetchPlanesOnDemand();
 
-    mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
+    glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
     MyUniforms uniformValues {
         .projectionMatrix = projectionMatrix,
         .viewMatrix = V,
@@ -287,15 +316,16 @@ void Application::renderFrame()
     auto pass = encoder.BeginRenderPass(&renderPass);
     pass.SetPipeline(pipeline);
 
-    pass.SetVertexBuffer(0, earthVertexBuffer, 0, earthVertexBuffer.GetSize());
-    pass.SetIndexBuffer(earthIndexBuffer, wgpu::IndexFormat::Uint32, 0, earthIndexBuffer.GetSize());
     earthBindGroup.bind(pass, 0);
-    pass.DrawIndexed(earthIndexCount, 1, 0, 0, 0);
+    earthSphere.render(pass);
 
-    pass.SetVertexBuffer(0, vertexBuffer, 0, vertexBuffer.GetSize());
-    pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0, indexBuffer.GetSize());
-    mainBindGroup.bind(pass, 0);
-    pass.DrawIndexed(indexCount, static_cast<uint32_t>(planesCount), 0, 0);
+    if (arePlanesVisible)
+    {
+        pass.SetVertexBuffer(0, vertexBuffer, 0, vertexBuffer.GetSize());
+        pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0, indexBuffer.GetSize());
+        mainBindGroup.bind(pass, 0);
+        pass.DrawIndexed(indexCount, static_cast<uint32_t>(planesCount), 0, 0);
+    }
     pass.End();
 
     auto commands = encoder.Finish();
@@ -386,6 +416,8 @@ void Application::processInput(float dt)
         cameraDistance -= speed * 100.0f;
     if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
         cameraDistance += speed * 100.0f;
+    if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
+        arePlanesVisible = !arePlanesVisible;
     pitch = glm::clamp(pitch, -MAX_PITCH, MAX_PITCH);
     updateCameraPosition();
 }

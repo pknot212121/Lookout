@@ -1,4 +1,8 @@
 #include "cube_sphere.h"
+#include "glm/fwd.hpp"
+#include "gpu_utils.h"
+#include "webgpu/webgpu_cpp.h"
+#include <cstdint>
 
 glm::vec3 CubeSphere::cubeToSphere(const glm::vec3& p, float radius)
 {
@@ -37,7 +41,7 @@ void CubeSphere::generateFace(const glm::vec3& localUp, float radius, uint32_t r
             glm::vec3 pointOnCube = localUp + (percent.x - 0.5f) * 2.0f * axisA 
                                             + (percent.y - 0.5f) * 2.0f * axisB;
 
-            glm::vec3 pointOnSphere = cubeToSphere(pointOnCube, radius);
+            glm::vec3 pointOnSphere = pointOnCube * radius;
             glm::vec3 normal = glm::normalize(pointOnSphere);
             glm::vec2 uv = calculateUV(normal);
 
@@ -75,24 +79,51 @@ void CubeSphere::generateFace(const glm::vec3& localUp, float radius, uint32_t r
             indices.push_back(i3);
         }
     }
-}
+} 
+
+constexpr uint32_t RESOLUTION = 33;
 
 void CubeSphere::init(wgpu::Device& device, float radius, uint32_t resolution)
 {
-    std::vector<gpuUtils::VertexAttributes> vertices;
+    std::vector<glm::vec2> vertices;
     std::vector<uint32_t> indices;
 
-    generateFace(glm::vec3(0, 1, 0), radius, resolution, vertices, indices); // Top
-    generateFace(glm::vec3(0, -1, 0), radius, resolution, vertices, indices); // Bottom
-    generateFace(glm::vec3(1, 0, 0), radius, resolution, vertices, indices); // Right
-    generateFace(glm::vec3(-1, 0, 0), radius, resolution, vertices, indices); // Left
-    generateFace(glm::vec3(0, 0, 1), radius, resolution, vertices, indices); // Front
-    generateFace(glm::vec3(0, 0, -1), radius, resolution, vertices, indices); // Back
+    // This is a base grid template used by every tile
+    for (uint32_t i=0; i<RESOLUTION; i++)
+    {
+        for (uint32_t j=0; j<RESOLUTION; j++)
+        {
+            // Each vertex is a relative position on a tile
+            vertices.push_back({i/(RESOLUTION-1),j/(RESOLUTION-1)});
+        }
+    }
+
+    // Index buffer for simple quads between the vertices
+    for (uint32_t i=0; i<32; i++)
+    {
+        for (uint32_t j=0; j<32; j++)
+        {
+            uint32_t i0 = j + i * RESOLUTION;
+            uint32_t i1 = j + 1 + i * RESOLUTION;
+            uint32_t i2 = j + (i+1) * RESOLUTION;
+            uint32_t i3 = j + 1 + (i+1) * RESOLUTION;
+            indices.push_back(i0);
+            indices.push_back(i1);
+            indices.push_back(i2);
+            indices.push_back(i1);
+            indices.push_back(i2);
+            indices.push_back(i3);
+        }
+    }
+    
+    
+
+
 
     indexCount = static_cast<uint32_t>(indices.size());
 
-    vertexBuffer = gpuUtils::createBuffer(device, "cube_sphere_vertex_buffer", vertices.size() * sizeof(gpuUtils::VertexAttributes), wgpu::BufferUsage::Vertex);
-    device.GetQueue().WriteBuffer(vertexBuffer, 0, vertices.data(), vertices.size() * sizeof(gpuUtils::VertexAttributes));
+    vertexBuffer = gpuUtils::createBuffer(device, "cube_sphere_vertex_buffer", vertices.size() * sizeof(glm::vec2), wgpu::BufferUsage::Vertex);
+    device.GetQueue().WriteBuffer(vertexBuffer, 0, vertices.data(), vertices.size() * sizeof(glm::vec2));
 
     indexBuffer = gpuUtils::createBuffer(device, "cube_sphere_index_buffer", indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
     device.GetQueue().WriteBuffer(indexBuffer, 0, indices.data(), indices.size() * sizeof(uint32_t));

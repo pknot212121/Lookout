@@ -318,14 +318,6 @@ void Application::renderFrame()
 
     earthBindGroup.bind(pass, 0);
     earthSphere.render(pass);
-
-    if (arePlanesVisible)
-    {
-        pass.SetVertexBuffer(0, vertexBuffer, 0, vertexBuffer.GetSize());
-        pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0, indexBuffer.GetSize());
-        mainBindGroup.bind(pass, 0);
-        pass.DrawIndexed(indexCount, static_cast<uint32_t>(planesCount), 0, 0);
-    }
     pass.End();
 
     auto commands = encoder.Finish();

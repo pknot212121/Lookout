@@ -48,12 +48,6 @@ class Application
     private:
         void processInput(float dt);
         void updatePlanes(const float* data, int sizeInBytes);
-        struct MyUniforms
-        {
-            glm::mat4x4 projectionMatrix;
-            glm::mat4x4 viewMatrix;
-        };
-        static_assert(sizeof(MyUniforms) % 16 == 0);
 
         GLFWwindow *window;
         wgpu::TextureFormat surfaceFormat = wgpu::TextureFormat::Undefined;
@@ -76,7 +70,6 @@ class Application
         CubeSphere earthSphere;
 
         gpuUtils::TextureResource earthTexture;
-        BindGroupManager earthBindGroup;
         
         uint32_t indexCount = 0;
         uint16_t planesCount = 0;

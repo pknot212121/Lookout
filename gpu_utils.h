@@ -1,4 +1,5 @@
 #pragma once
+#include <iostream>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -30,12 +31,40 @@ namespace gpuUtils
         glm::vec2 uv;
     };
 
+    struct TileInstanceAttributes {
+        uint32_t z, x, y, layer;
+    };
+
+    struct MyUniforms
+    {
+        glm::mat4x4 projectionMatrix;
+        glm::mat4x4 viewMatrix;
+    };
+    static_assert(sizeof(MyUniforms) % 16 == 0);
+
     TextureResource createTextureFromBytes(
         const wgpu::Device& device,
         const uint8_t* data,
-        int width,
-        int height,
+        uint32_t width,
+        uint32_t height,
         wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm
+    );
+
+    TextureResource createTextureArray(
+        const wgpu::Device& device,
+        uint32_t width,
+        uint32_t height,
+        uint32_t layerCount,
+        wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm
+    );
+
+    void writeTextureLayer(
+        const wgpu::Device& device,
+        const wgpu::Texture& textureArray,
+        uint32_t layer,
+        const uint8_t* data,
+        uint32_t width,
+        uint32_t height
     );
 
     TextureResource loadTextureFromFile(
@@ -60,5 +89,22 @@ namespace gpuUtils
         uint64_t size_in_bytes,
         wgpu::BufferUsage usage
     );
+
+    void glfwError (int code, const char* message);
+
+    void adapterRequest(
+        wgpu::RequestAdapterStatus status,
+        wgpu::Adapter adapter,
+        wgpu::StringView message,
+        wgpu::Adapter* data
+    );
+
+    void deviceLost(
+        [[maybe_unused]] const wgpu::Device& device,
+        wgpu::DeviceLostReason reason,
+        struct wgpu::StringView message
+    );
+
+    void uncapturedError ([[maybe_unused]] const wgpu::Device& device, wgpu::ErrorType type, struct wgpu::StringView message);
 
 }

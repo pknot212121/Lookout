@@ -69,6 +69,8 @@ add_executable(App
     gpu_utils.h
     gpu_utils.cpp
     depth_manager.hpp
+    mbtiles_reader.h
+    mbtiles_reader.cpp
 )
 
 set_property(TARGET App APPEND PROPERTY 

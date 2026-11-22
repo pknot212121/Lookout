@@ -7,6 +7,8 @@
 class DynamicVertexLayout 
 {
     public:
+        DynamicVertexLayout() = default;
+
         DynamicVertexLayout(std::initializer_list<uint32_t> sizes)
         {
             uint32_t currentOffset = 0;

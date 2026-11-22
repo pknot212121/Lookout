@@ -1,4 +1,5 @@
 #include "gpu_utils.h"
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <fstream>
@@ -7,21 +8,19 @@
 
 namespace gpuUtils
 {
-    TextureResource createTextureFromBytes(const wgpu::Device& device, const uint8_t* data, int width, int height, wgpu::TextureFormat format)
+    TextureResource createTextureFromBytes(const wgpu::Device& device, const uint8_t* data, uint32_t width, uint32_t height, wgpu::TextureFormat format)
     {
-        if (!data || width <= 0 || height <= 0)
+        if (!data)
         {
             std::cerr << "[Texture creator] Texture data is invalid" << std::endl;
             return {};
         }
 
-        uint32_t uWidth = static_cast<uint32_t>(width);
-        uint32_t uHeight = static_cast<uint32_t>(height);
         wgpu::TextureDescriptor textureDesc {
             .label = "Model Texture",
             .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
             .dimension = wgpu::TextureDimension::e2D,
-            .size = { uWidth, uHeight, 1 },
+            .size = { width, height, 1 },
             .format = format,
             .mipLevelCount = 1,
             .sampleCount = 1,
@@ -35,18 +34,18 @@ namespace gpuUtils
         };
         wgpu::TexelCopyBufferLayout source {
             .offset = 0,
-            .bytesPerRow = 4 * uWidth,
-            .rowsPerImage = uHeight,
+            .bytesPerRow = 4 * width,
+            .rowsPerImage = height,
         };
         wgpu::Extent3D writeSize {
-            .width = uWidth,
-            .height = uHeight,
+            .width = width,
+            .height = height,
             .depthOrArrayLayers = 1,
         };
         device.GetQueue().WriteTexture(
             &destination, 
             data, 
-            static_cast<size_t>(uWidth * uHeight * 4), 
+            static_cast<size_t>(width * height * 4), 
             &source, 
             &writeSize
         );
@@ -72,6 +71,69 @@ namespace gpuUtils
         };
         wgpu::Sampler sampler = device.CreateSampler(&samplerDesc);
         return { texture, view, sampler };
+    }
+
+    TextureResource createTextureArray(const wgpu::Device& device, uint32_t width, uint32_t height, uint32_t layerCount, wgpu::TextureFormat format)
+    {
+        wgpu::TextureDescriptor textureDesc {
+            .label = "Model Texture",
+            .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst,
+            .dimension = wgpu::TextureDimension::e2D,
+            .size = { width, height, layerCount},
+            .format = format,
+            .mipLevelCount = 1,
+            .sampleCount = 1,
+        };
+        wgpu::Texture texture = device.CreateTexture(&textureDesc);
+        wgpu::TextureViewDescriptor viewDesc {
+            .label = "Model Texture View",
+            .format = format,
+            .dimension = wgpu::TextureViewDimension::e2DArray,
+            .baseMipLevel = 0,
+            .mipLevelCount = 1,
+            .baseArrayLayer = 0,
+            .arrayLayerCount = layerCount,
+            .aspect = wgpu::TextureAspect::All,
+        };
+        wgpu::TextureView view = texture.CreateView(&viewDesc);
+        wgpu::SamplerDescriptor samplerDesc {
+            .label = "Model Texture Sampler",
+            .addressModeU = wgpu::AddressMode::Repeat,
+            .addressModeV = wgpu::AddressMode::Repeat,
+            .addressModeW = wgpu::AddressMode::Repeat,
+            .magFilter = wgpu::FilterMode::Linear,
+            .minFilter = wgpu::FilterMode::Linear,
+            .mipmapFilter = wgpu::MipmapFilterMode::Linear,
+        };
+        wgpu::Sampler sampler = device.CreateSampler(&samplerDesc);
+        return { texture, view, sampler };
+    }
+
+    void writeTextureLayer(const wgpu::Device& device, const wgpu::Texture& textureArray, uint32_t layer, const uint8_t* data, uint32_t width, uint32_t height)
+    {
+        wgpu::TexelCopyTextureInfo destination {
+            .texture = textureArray,
+            .mipLevel = 0,
+            .origin = { 0, 0, layer },
+            .aspect = wgpu::TextureAspect::All,
+        };
+        wgpu::TexelCopyBufferLayout source {
+            .offset = 0,
+            .bytesPerRow = 4 * width,
+            .rowsPerImage = height,
+        };
+        wgpu::Extent3D writeSize {
+            .width = width,
+            .height = height,
+            .depthOrArrayLayers = 1,
+        };
+        device.GetQueue().WriteTexture(
+            &destination, 
+            data, 
+            static_cast<size_t>(width * height * 4), 
+            &source, 
+            &writeSize
+        );
     }
 
     TextureResource loadTextureFromFile(wgpu::Device& device, const std::string& filepath)
@@ -128,5 +190,41 @@ namespace gpuUtils
             .size = size_in_bytes,
         };
         return device.CreateBuffer(&desc);
+    }
+
+    void glfwError (int code, const char* message)
+    {
+        std::cerr << "GLFW error: " << code << ":" << message;
+        assert(false);
+    }
+
+    void adapterRequest(wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message, wgpu::Adapter* data)
+    {
+        if (status != wgpu::RequestAdapterStatus::Success) {
+            std::cout << "Adapter request failed: " << std::string_view(message);
+            exit(1);
+        }
+        *data = adapter;
+    }
+
+    void deviceLost([[maybe_unused]] const wgpu::Device& device, wgpu::DeviceLostReason reason, struct wgpu::StringView message)
+    {
+        if (message == std::string_view("A valid external Instance reference no longer exists.")) {
+            return;
+        }
+        std::cerr << "device lost: \n";
+        if (message.length > 0) {
+            std::cout << ": " << std::string_view(message);
+        }
+        std::cout << std::endl;
+    }
+
+    void uncapturedError ([[maybe_unused]] const wgpu::Device& device, wgpu::ErrorType type, struct wgpu::StringView message)
+    {
+        std::cout << "uncaptured error: \n";
+        if (message.length > 0)
+            std::cerr << ": {}" << std::string_view(message);
+        std::cout << std::endl;
+        assert(false);
     }
 }

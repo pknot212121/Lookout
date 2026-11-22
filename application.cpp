@@ -1,158 +1,16 @@
 #include "application.h"
+#include "cube_sphere.h"
 #include "glm/ext/matrix_transform.hpp"
 #include <iostream>
 #include "webgpu/webgpu_cpp.h"
 #include <cstdint>
 #include <emscripten/emscripten.h>
 #include "timer.h"
-#include "vertex_layout.hpp"
-
-namespace //glfw and webgpu callbacks
-{
-    void glfwError (int code, const char* message)
-    {
-        std::cerr << "GLFW error: " << code << ":" << message;
-        assert(false);
-    }
-
-    void adapterRequest(wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message, wgpu::Adapter* data)
-    {
-        if (status != wgpu::RequestAdapterStatus::Success) {
-            std::cout << "Adapter request failed: " << std::string_view(message);
-            exit(1);
-        }
-        *data = adapter;
-    }
-
-    void deviceLost([[maybe_unused]] const wgpu::Device& device, wgpu::DeviceLostReason reason, struct wgpu::StringView message)
-    {
-        if (message == std::string_view("A valid external Instance reference no longer exists.")) {
-            return;
-        }
-        std::cerr << "device lost: \n";
-        if (message.length > 0) {
-            std::cout << ": " << std::string_view(message);
-        }
-        std::cout << std::endl;
-    }
-
-    void uncapturedError ([[maybe_unused]] const wgpu::Device& device, wgpu::ErrorType type, struct wgpu::StringView message)
-    {
-        std::cout << "uncaptured error: \n";
-        if (message.length > 0)
-            std::cerr << ": {}" << std::string_view(message);
-        std::cout << std::endl;
-        assert(false);
-    }
-}
-
-void Application::initializeBuffers()
-{
-    Timer t1("initializeBuffers");
-    GlbReader reader;
-    bool success = reader.loadGlbModel(RESOURCE_DIR "/plane.glb");
-    assert(success);
-    const GlbModelData& modelData = reader.getData();
-    vertexBuffer = gpuUtils::createBuffer(device, "vertex_buffer", modelData.vertices.size() * sizeof(gpuUtils::VertexAttributes), wgpu::BufferUsage::Vertex);
-    device.GetQueue().WriteBuffer(vertexBuffer, 0, modelData.vertices.data(), modelData.vertices.size() * sizeof(gpuUtils::VertexAttributes));
-    vertexCount = static_cast<int32_t>(modelData.vertices.size());
-
-    indexBuffer = gpuUtils::createBuffer(device, "index_buffer", modelData.indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
-    device.GetQueue().WriteBuffer(indexBuffer, 0, modelData.indices.data(), modelData.indices.size() * sizeof(uint32_t));
-    indexCount = static_cast<uint32_t>(modelData.indices.size());
-
-    if (!modelData.textureData.empty())
-    {
-        planeTexture = gpuUtils::createTextureFromBytes(device, modelData.textureData.data(), modelData.texWidth, modelData.texHeight);
-    }
-
-    earthTexture = gpuUtils::loadTextureFromFile(device, RESOURCE_DIR "/earth.jpg");
-    earthSphere.init(device, PLANET_RADIUS, 64);
-    glm::mat4 earthModelMatrix = glm::mat4(1.0f);
-    earthInstanceBuffer = gpuUtils::createBuffer(
-        device, 
-        "earth_instance_buffer", 
-        sizeof(glm::mat4), 
-        wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst
-    );
-    device.GetQueue().WriteBuffer(earthInstanceBuffer, 0, &earthModelMatrix, sizeof(glm::mat4));
-
-    instanceBuffer = gpuUtils::createBuffer(device, "instance", MAX_PLANES * sizeof(glm::mat4), wgpu::BufferUsage::Storage);
-    uniformBuffer = gpuUtils::createBuffer(device, "uniform buffer", sizeof(MyUniforms), wgpu::BufferUsage::Uniform);
-
-    wgpu::Limits limits;
-    device.GetLimits(&limits);
-
-    glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
-    glm::mat4x4 P = glm::perspective(FOV, 1.0f, 0.01f, 1000.0f);
-    projectionMatrix = P;
-    MyUniforms uniformValues {
-        .projectionMatrix = P,
-        .viewMatrix = V,
-    };
-
-    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(MyUniforms));
-}
-
-void Application::initializePipeline()
-{
-    Timer t2("initializePipeline");
-    assert(surfaceFormat != wgpu::TextureFormat::Undefined);
-    assert(vertexBuffer);
-    auto shader = gpuUtils::loadShaderModule(RESOURCE_DIR "/shader.wgsl", device);
-    assert(shader);
-    wgpu::ColorTargetState target{.format = surfaceFormat,};
-
-    DynamicVertexLayout vertexLayout({3, 3, 2});
-    depthManager = std::make_unique<DepthManager>(DEPTH_TEXTURE_FORMAT, device, WIN_WIDTH, WIN_HEIGHT);
-
-    wgpu::FragmentState fragState {
-        .module = shader,
-        .entryPoint = "fs",
-        .constants = nullptr,
-        .targetCount = 1,
-        .targets = &target,
-    };
-
-    mainBindGroup.addBuffer(0, uniformBuffer, sizeof(MyUniforms), wgpu::BufferBindingType::Uniform);
-    mainBindGroup.addBuffer(1, instanceBuffer, MAX_PLANES * sizeof(glm::mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
-    mainBindGroup.addTexture(2, planeTexture.view);
-    mainBindGroup.addSampler(3, planeTexture.sampler);
-    mainBindGroup.build(device);
-
-    earthBindGroup.addBuffer(0, uniformBuffer, sizeof(MyUniforms), wgpu::BufferBindingType::Uniform);
-    earthBindGroup.addBuffer(1, earthInstanceBuffer, sizeof(glm::mat4), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
-    earthBindGroup.addTexture(2, earthTexture.view);
-    earthBindGroup.addSampler(3, earthTexture.sampler);
-    earthBindGroup.build(device);
-
-    wgpu::BindGroupLayout bindGroupLayout = mainBindGroup.getLayout();
-    wgpu::PipelineLayoutDescriptor layoutDesc {
-        .bindGroupLayoutCount = 1,
-        .bindGroupLayouts = (wgpu::BindGroupLayout*)&bindGroupLayout,
-    };
-
-    auto layout = device.CreatePipelineLayout(&layoutDesc);
-    wgpu::RenderPipelineDescriptor pipelineDesc {
-        .label = "Main render pipeline",
-        .layout = layout,
-        .vertex = {
-            .module = shader,
-            .entryPoint = "vs",
-            .constants = nullptr,
-            .bufferCount = 1,
-            .buffers = vertexLayout.getLayout(),
-        },
-        .depthStencil = depthManager->getDepthStencilState(),
-        .fragment = &fragState,
-    };
-    pipeline = device.CreateRenderPipeline(&pipelineDesc);
-}
 
 bool Application::initializeGLFW()
 {
     Timer t3("initializeGLFW");
-    glfwSetErrorCallback(glfwError);
+    glfwSetErrorCallback(gpuUtils::glfwError);
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW.";
@@ -186,6 +44,70 @@ static EM_BOOL onWindowResize(int eventType, const EmscriptenUiEvent* uiEvent, v
     emscripten_set_canvas_element_size("#canvas", width, height);
     app->onResize(width, height);
     return EM_TRUE;
+}
+
+void Application::initializeBuffers()
+{
+    Timer t1("initializeBuffers");
+    
+    uniformBuffer = gpuUtils::createBuffer(device, "uniform_buffer",
+    sizeof(gpuUtils::MyUniforms), wgpu::BufferUsage::Uniform);
+    earthSphere.init(device, PLANET_RADIUS, 64, uniformBuffer);
+
+    wgpu::Limits limits;
+    device.GetLimits(&limits);
+
+    glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
+    glm::mat4x4 P = glm::perspective(FOV, 1.0f, 0.01f, 1000.0f);
+    projectionMatrix = P;
+    gpuUtils::MyUniforms uniformValues {
+        .projectionMatrix = P,
+        .viewMatrix = V,
+    };
+
+    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(gpuUtils::MyUniforms));
+}
+
+void Application::initializePipeline()
+{
+    Timer t2("initializePipeline");
+    assert(surfaceFormat != wgpu::TextureFormat::Undefined);
+    assert(vertexBuffer);
+    auto shader = gpuUtils::loadShaderModule(RESOURCE_DIR "/tile_shader.wgsl", device);
+    assert(shader);
+    wgpu::ColorTargetState target{.format = surfaceFormat,};
+
+    depthManager = std::make_unique<DepthManager>(DEPTH_TEXTURE_FORMAT, device, WIN_WIDTH, WIN_HEIGHT);
+
+    wgpu::FragmentState fragState {
+        .module = shader,
+        .entryPoint = "fs",
+        .constants = nullptr,
+        .targetCount = 1,
+        .targets = &target,
+    };
+
+    wgpu::BindGroupLayout bindGroupLayout = earthSphere.getBindGroupLayout();
+    wgpu::PipelineLayoutDescriptor layoutDesc {
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts = (wgpu::BindGroupLayout*)&bindGroupLayout,
+    };
+
+    auto layout = device.CreatePipelineLayout(&layoutDesc);
+    wgpu::RenderPipelineDescriptor pipelineDesc {
+        .label = "Main render pipeline",
+        .layout = layout,
+        .vertex = {
+            .module = shader,
+            .entryPoint = "vs",
+            .constants = nullptr,
+            .bufferCount = 1,
+            .buffers = earthSphere.getVertexLayout(),
+        },
+        .depthStencil = depthManager->getDepthStencilState(),
+        .fragment = &fragState,
+    };
+    pipeline = device.CreateRenderPipeline(&pipelineDesc);
 }
 
 bool Application::initialize()
@@ -225,8 +147,8 @@ void Application::onAdapterReady(wgpu::RequestAdapterStatus status, wgpu::Adapte
     this->adapter = adapt;
     wgpu::DeviceDescriptor deviceDesc{};
     deviceDesc.label = "Primary device";
-    deviceDesc.SetDeviceLostCallback(wgpu::CallbackMode::AllowProcessEvents, deviceLost);
-    deviceDesc.SetUncapturedErrorCallback(uncapturedError);
+    deviceDesc.SetDeviceLostCallback(wgpu::CallbackMode::AllowProcessEvents, gpuUtils::deviceLost);
+    deviceDesc.SetUncapturedErrorCallback(gpuUtils::uncapturedError);
     this->adapter.RequestDevice(&deviceDesc, wgpu::CallbackMode::AllowSpontaneous,
         [this](auto status, auto dev, wgpu::StringView msg) {
             this->onDeviceReady(status, dev, msg);
@@ -277,22 +199,11 @@ void Application::renderFrame()
     if (fetchCooldown < 0.0) fetchPlanesOnDemand();
 
     glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
-    MyUniforms uniformValues {
+    gpuUtils::MyUniforms uniformValues {
         .projectionMatrix = projectionMatrix,
         .viewMatrix = V,
     };
-    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(MyUniforms));
-    for (int i = 0; i < planesCount; i++)
-    {
-        planes[i].fly(dt);
-        instanceData[i] = planes[i].getModelMatrix();
-    }
- 
-    device.GetQueue().WriteBuffer(
-        instanceBuffer, 0, 
-        &instanceData, 
-        planesCount * sizeof(glm::mat4)
-    );
+    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(gpuUtils::MyUniforms));
 
     auto encoder = device.CreateCommandEncoder();
     wgpu::SurfaceTexture surfaceTexture;
@@ -316,7 +227,6 @@ void Application::renderFrame()
     auto pass = encoder.BeginRenderPass(&renderPass);
     pass.SetPipeline(pipeline);
 
-    earthBindGroup.bind(pass, 0);
     earthSphere.render(pass);
     pass.End();
 

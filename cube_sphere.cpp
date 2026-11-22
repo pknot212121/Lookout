@@ -1,89 +1,19 @@
 #include "cube_sphere.h"
 #include "glm/fwd.hpp"
 #include "gpu_utils.h"
+#include "vertex_layout.hpp"
 #include "webgpu/webgpu_cpp.h"
 #include <cstdint>
-
-glm::vec3 CubeSphere::cubeToSphere(const glm::vec3& p, float radius)
-{
-    float x2 = p.x * p.x;
-    float y2 = p.y * p.y;
-    float z2 = p.z * p.z;
-
-    glm::vec3 s;
-    s.x = p.x * std::sqrt(1.0f - (y2 * 0.5f) - (z2 * 0.5f) + ((y2 * z2) / 3.0f));
-    s.y = p.y * std::sqrt(1.0f - (z2 * 0.5f) - (x2 * 0.5f) + ((z2 * x2) / 3.0f));
-    s.z = p.z * std::sqrt(1.0f - (x2 * 0.5f) - (y2 * 0.5f) + ((x2 * y2) / 3.0f));
-
-    return s * radius;
-}
-
-glm::vec2 CubeSphere::calculateUV(const glm::vec3& normal)
-{
-    float u = 0.5f + (std::atan2(normal.z, normal.x) / (2.0f * glm::pi<float>()));
-    float v = 0.5f - (std::asin(normal.y) / glm::pi<float>());
-    return { u, v };
-}
-
-void CubeSphere::generateFace(const glm::vec3& localUp, float radius, uint32_t resolution,
-                              std::vector<gpuUtils::VertexAttributes>& vertices, std::vector<uint32_t>& indices)
-{
-    glm::vec3 axisA = glm::vec3(localUp.y, localUp.z, localUp.x);
-    glm::vec3 axisB = glm::cross(localUp, axisA);
-
-    uint32_t vertexOffset = static_cast<uint32_t>(vertices.size());
-
-    for (uint32_t y = 0; y < resolution; ++y)
-    {
-        for (uint32_t x = 0; x < resolution; ++x)
-        {
-            glm::vec2 percent = glm::vec2(x, y) / static_cast<float>(resolution - 1);
-            glm::vec3 pointOnCube = localUp + (percent.x - 0.5f) * 2.0f * axisA 
-                                            + (percent.y - 0.5f) * 2.0f * axisB;
-
-            glm::vec3 pointOnSphere = pointOnCube * radius;
-            glm::vec3 normal = glm::normalize(pointOnSphere);
-            glm::vec2 uv = calculateUV(normal);
-
-            vertices.push_back({ pointOnSphere, normal, uv });
-        }
-    }
-
-    for (uint32_t y = 0; y < resolution - 1; ++y)
-    {
-        for (uint32_t x = 0; x < resolution - 1; ++x)
-        {
-            uint32_t i0 = vertexOffset + x + y * resolution;
-            uint32_t i1 = vertexOffset + (x + 1) + y * resolution;
-            uint32_t i2 = vertexOffset + x + (y + 1) * resolution;
-            uint32_t i3 = vertexOffset + (x + 1) + (y + 1) * resolution;
-
-            float u0 = vertices[i0].uv.x;
-            float u1 = vertices[i1].uv.x;
-            float u2 = vertices[i2].uv.x;
-            float u3 = vertices[i3].uv.x;
-
-            if (std::abs(u0 - u1) > 0.5f || std::abs(u0 - u2) > 0.5f || std::abs(u0 - u3) > 0.5f)
-            {
-                if (vertices[i0].uv.x < 0.5f) vertices[i0].uv.x += 1.0f;
-                if (vertices[i1].uv.x < 0.5f) vertices[i1].uv.x += 1.0f;
-                if (vertices[i2].uv.x < 0.5f) vertices[i2].uv.x += 1.0f;
-                if (vertices[i3].uv.x < 0.5f) vertices[i3].uv.x += 1.0f;
-            }
-            indices.push_back(i0);
-            indices.push_back(i2);
-            indices.push_back(i1);
-
-            indices.push_back(i1);
-            indices.push_back(i2);
-            indices.push_back(i3);
-        }
-    }
-} 
+#include <vector>
+#include <stb_image.h>
 
 constexpr uint32_t RESOLUTION = 33;
+constexpr uint32_t MAX_TILES = 256;
+constexpr uint32_t TEX_SIZE = 256;
+constexpr uint32_t TEST_ZOOM = 3;
+constexpr uint32_t TILES_PER_SIDE = 1u << TEST_ZOOM;
 
-void CubeSphere::init(wgpu::Device& device, float radius, uint32_t resolution)
+void CubeSphere::init(wgpu::Device& device, float radius, uint32_t resolution, wgpu::Buffer& uniformBuffer)
 {
     std::vector<glm::vec2> vertices;
     std::vector<uint32_t> indices;
@@ -94,7 +24,7 @@ void CubeSphere::init(wgpu::Device& device, float radius, uint32_t resolution)
         for (uint32_t j=0; j<RESOLUTION; j++)
         {
             // Each vertex is a relative position on a tile
-            vertices.push_back({i/(RESOLUTION-1),j/(RESOLUTION-1)});
+            vertices.push_back({i/float(RESOLUTION-1),j/float(RESOLUTION-1)});
         }
     }
 
@@ -116,22 +46,70 @@ void CubeSphere::init(wgpu::Device& device, float radius, uint32_t resolution)
         }
     }
     
-    
+    // Instance buffer is needed for tile data parameters in a final texture
+    instanceBuffer = gpuUtils::createBuffer(
+        device, 
+        "earth_instance_buffer", 
+        MAX_TILES * sizeof(gpuUtils::TileInstanceAttributes), 
+        wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst
+    );
+    textureArray = gpuUtils::createTextureArray(device, TEX_SIZE, TEX_SIZE, MAX_TILES);
 
+    vertexLayout = DynamicVertexLayout({2});
 
+    earthBindGroup.addBuffer(0, uniformBuffer, sizeof(gpuUtils::MyUniforms), wgpu::BufferBindingType::Uniform);
+    earthBindGroup.addBuffer(1, instanceBuffer, MAX_TILES * sizeof(gpuUtils::TileInstanceAttributes), wgpu::BufferBindingType::ReadOnlyStorage, wgpu::ShaderStage::Vertex);
+    earthBindGroup.addTexture(2, textureArray.view, wgpu::TextureSampleType::Float, wgpu::TextureViewDimension::e2DArray);
+    earthBindGroup.addSampler(3, textureArray.sampler);
+    earthBindGroup.build(device);
 
-    indexCount = static_cast<uint32_t>(indices.size());
+    std::vector<gpuUtils::TileInstanceAttributes> tileData;
+
+    for (uint32_t y = 0; y < TILES_PER_SIDE; y++)
+    {
+        for (uint32_t x = 0; x < TILES_PER_SIDE; x++)
+        {
+            tileData.push_back({TEST_ZOOM, x, y, y * TILES_PER_SIDE + x});
+            tileReader.requestTile(TEST_ZOOM, x, y, 
+                [device, this](uint32_t tz, uint32_t tx, uint32_t ty, std::vector<uint8_t> bytes)
+                {
+                    int w, h, ch;
+                    stbi_uc* px = stbi_load_from_memory(bytes.data(), (int)bytes.size(), &w, &h, &ch, 4);
+                    if (!px)
+                    {
+                        std::cerr << "decode failed" << tz << "/" << tx << "/" << ty << "\n";
+                        return;
+                    }
+                    if (w != TEX_SIZE || h != TEX_SIZE)
+                    {
+                        std::cerr << "unexpected tile size" << w << "x" << h << "\n";
+                        stbi_image_free(px);
+                        return;
+                    }
+
+                    uint32_t layer = ty * TILES_PER_SIDE + tx;
+                    gpuUtils::writeTextureLayer(device, textureArray.texture, layer, px, w, h);
+                    stbi_image_free(px);
+                }
+            );
+        }
+    }
 
     vertexBuffer = gpuUtils::createBuffer(device, "cube_sphere_vertex_buffer", vertices.size() * sizeof(glm::vec2), wgpu::BufferUsage::Vertex);
     device.GetQueue().WriteBuffer(vertexBuffer, 0, vertices.data(), vertices.size() * sizeof(glm::vec2));
 
     indexBuffer = gpuUtils::createBuffer(device, "cube_sphere_index_buffer", indices.size() * sizeof(uint32_t), wgpu::BufferUsage::Index);
     device.GetQueue().WriteBuffer(indexBuffer, 0, indices.data(), indices.size() * sizeof(uint32_t));
+    indexCount = static_cast<uint32_t>(indices.size());
+
+    device.GetQueue().WriteBuffer(instanceBuffer, 0, tileData.data(), sizeof(gpuUtils::TileInstanceAttributes) * tileData.size());
+    instanceCount = tileData.size();
 }
 
 void CubeSphere::render(wgpu::RenderPassEncoder& pass)
 {
+    earthBindGroup.bind(pass, 0);
     pass.SetVertexBuffer(0, vertexBuffer, 0, vertexBuffer.GetSize());
     pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32, 0, indexBuffer.GetSize());
-    pass.DrawIndexed(indexCount, 1, 0, 0, 0);
+    pass.DrawIndexed(indexCount, instanceCount, 0, 0, 0);
 }

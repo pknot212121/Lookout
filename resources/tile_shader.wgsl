@@ -16,7 +16,7 @@ struct TileData {
 @group(0) @binding(3) var mySampler: sampler;
 
 const PI: f32 = 3.14159265359;
-const RADIUS: f32 = 1.0;
+const RADIUS: f32 = 100.0;
 
 struct VertexInput {
     @builtin(instance_index) instanceIdx: u32,
@@ -43,7 +43,7 @@ fn vs(in: VertexInput) -> VertexOutput {
     let p = vec3f(
         cos(lat) * cos(lon),
         sin(lat),
-        -cos(lat) * sin(lon)
+        cos(lat) * sin(lon)
     ) * RADIUS;
 
     var out: VertexOutput;

@@ -10,7 +10,7 @@
 constexpr uint32_t RESOLUTION = 33;
 constexpr uint32_t MAX_TILES = 256;
 constexpr uint32_t TEX_SIZE = 256;
-constexpr uint32_t TEST_ZOOM = 3;
+constexpr uint32_t TEST_ZOOM = 4;
 constexpr uint32_t TILES_PER_SIDE = 1u << TEST_ZOOM;
 
 void CubeSphere::init(wgpu::Device& device, float radius, uint32_t resolution, wgpu::Buffer& uniformBuffer)

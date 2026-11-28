@@ -7,7 +7,7 @@
 namespace fs = std::filesystem;
 struct GlbModelData
 {
-    std::vector<gpuUtils::VertexAttributes> vertices;
+    std::vector<VertexAttributes> vertices;
     std::vector<uint32_t> indices;
     std::vector<uint8_t> textureData;
     int texWidth = 0, texHeight = 0, texChannels = 0;

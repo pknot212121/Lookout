@@ -136,6 +136,35 @@ namespace gpuUtils
         );
     }
 
+    void clearAllLayers(const wgpu::Device& device, const wgpu::Texture& texture,
+                    uint32_t layerCount, wgpu::TextureFormat format)
+    {
+        auto encoder = device.CreateCommandEncoder();
+
+        for (uint32_t layer = 0; layer < layerCount; ++layer)
+        {
+            wgpu::TextureViewDescriptor vd {
+                .format = format,
+                .dimension = wgpu::TextureViewDimension::e2D,   // jedna warstwa jako zwykły 2D
+                .baseMipLevel = 0,
+                .mipLevelCount = 1,
+                .baseArrayLayer = layer,
+                .arrayLayerCount = 1,
+            };
+            wgpu::RenderPassColorAttachment att {
+                .view = texture.CreateView(&vd),
+                .loadOp = wgpu::LoadOp::Clear,
+                .storeOp = wgpu::StoreOp::Store,
+                .clearValue = { 0.0, 0.0, 0.0, 0.0 },
+            };
+            wgpu::RenderPassDescriptor rp { .colorAttachmentCount = 1, .colorAttachments = &att };
+            encoder.BeginRenderPass(&rp).End();   // pusty pass wystarczy
+        }
+
+        auto cmds = encoder.Finish();
+        device.GetQueue().Submit(1, &cmds);
+    }
+
     TextureResource loadTextureFromFile(wgpu::Device& device, const std::string& filepath)
     {
         int width = 0, height = 0, channels = 0;

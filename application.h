@@ -12,23 +12,8 @@
 #include <emscripten/fetch.h>
 #include "cube_sphere.h"
 #include "depth_manager.hpp"
-
-constexpr float PI = 3.14159265358979323846f;
-constexpr uint32_t WIN_WIDTH = 512;
-constexpr uint32_t WIN_HEIGHT = 512;
-constexpr wgpu::TextureFormat DEPTH_TEXTURE_FORMAT = wgpu::TextureFormat::Depth24Plus;
-
-constexpr float CAMERA_SPEED = 1.0f;
-constexpr vec3 CAMERA_UP {0.0f, 1.0f, 0.0f};
-constexpr vec3 CENTER_POINT {0.0f, 0.0f, 0.0f};
-constexpr float FOV = 1.047198f;
-constexpr uint32_t MAX_PLANES = 30000;
-constexpr float LONG_FETCH_COOLDOWN = 122.0f;
-constexpr float SHORT_FETCH_COOLDOWN = 3.0f;
-constexpr uint32_t HEADER_OFFSET = 4;
-constexpr float PLANET_RADIUS = 90.0f;
-constexpr float ROTATION_SPEED = glm::half_pi<float>();
-constexpr float MAX_PITCH = glm::half_pi<float>() - 0.01f;
+#include "lookout_define.h"
+#include "lookout_struct.h"
 
 using glm::quat;
 
@@ -59,7 +44,7 @@ class Application
         int32_t vertexCount = 0;
         std::unique_ptr<DepthManager> depthManager;
         BindGroupManager mainBindGroup;
-        gpuUtils::TextureResource planeTexture;
+        TextureResource planeTexture;
         
         wgpu::Buffer vertexBuffer;
         wgpu::Buffer indexBuffer;
@@ -69,7 +54,7 @@ class Application
 
         CubeSphere earthSphere;
 
-        gpuUtils::TextureResource earthTexture;
+        TextureResource earthTexture;
         
         uint32_t indexCount = 0;
         uint16_t planesCount = 0;

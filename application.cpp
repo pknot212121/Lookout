@@ -51,7 +51,7 @@ void Application::initializeBuffers()
     Timer t1("initializeBuffers");
     
     uniformBuffer = gpuUtils::createBuffer(device, "uniform_buffer",
-    sizeof(gpuUtils::MyUniforms), wgpu::BufferUsage::Uniform);
+    sizeof(MyUniforms), wgpu::BufferUsage::Uniform);
     earthSphere.init(device, PLANET_RADIUS, 64, uniformBuffer);
 
     wgpu::Limits limits;
@@ -60,12 +60,12 @@ void Application::initializeBuffers()
     glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
     glm::mat4x4 P = glm::perspective(FOV, 1.0f, 0.01f, 1000.0f);
     projectionMatrix = P;
-    gpuUtils::MyUniforms uniformValues {
+    MyUniforms uniformValues {
         .projectionMatrix = P,
         .viewMatrix = V,
     };
 
-    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(gpuUtils::MyUniforms));
+    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(MyUniforms));
 }
 
 void Application::initializePipeline()
@@ -199,11 +199,11 @@ void Application::renderFrame()
     if (fetchCooldown < 0.0) fetchPlanesOnDemand();
 
     glm::mat4x4 V = glm::lookAt(cameraPos, CENTER_POINT, CAMERA_UP);
-    gpuUtils::MyUniforms uniformValues {
+    MyUniforms uniformValues {
         .projectionMatrix = projectionMatrix,
         .viewMatrix = V,
     };
-    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(gpuUtils::MyUniforms));
+    device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniformValues, sizeof(MyUniforms));
 
     auto encoder = device.CreateCommandEncoder();
     wgpu::SurfaceTexture surfaceTexture;
@@ -227,7 +227,7 @@ void Application::renderFrame()
     auto pass = encoder.BeginRenderPass(&renderPass);
     pass.SetPipeline(pipeline);
 
-    earthSphere.render(pass);
+    earthSphere.render(pass, device, cameraPos);
     pass.End();
 
     auto commands = encoder.Finish();

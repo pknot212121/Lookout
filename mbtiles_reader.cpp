@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cstdio>
 
-void MBTilesReader::requestTile(uint32_t z, uint32_t x, uint32_t y, TileCallback cb)
+void MBTilesReader::requestTile(uint32_t z, uint32_t x, uint32_t y, FetchCb cb)
 {
     char url[96];
     std::snprintf(url, sizeof(url), "http://127.0.0.1:8070/tile/%u/%u/%u", z, x, y);
@@ -16,17 +16,20 @@ void MBTilesReader::requestTile(uint32_t z, uint32_t x, uint32_t y, TileCallback
     attr.onsuccess = [](emscripten_fetch_t* f) {
         auto* req = static_cast<TileRequest*>(f->userData);
         auto* p = reinterpret_cast<const uint8_t*>(f->data);
-        req->cb(req->z, req->x, req->y, std::vector<uint8_t>(p, p + f->numBytes));
+        std::vector<uint8_t> bytes(p, p + f->numBytes);
+        int status = f->status;
+        FetchCb cb = std::move(req->cb);
         delete req;
         emscripten_fetch_close(f);
+        cb(true, status, std::move(bytes));
     };
-    
     attr.onerror = [](emscripten_fetch_t* f) {
         auto* req = static_cast<TileRequest*>(f->userData);
-        std::cerr << "[Fetch] tile " << req->z << "/" << req->x << "/" << req->y
-                  << " failed, status " << f->status << "\n";
+        int status = f->status;
+        FetchCb cb = std::move(req->cb);
         delete req;
         emscripten_fetch_close(f);
+        cb(false, status, {});
     };
     
     emscripten_fetch(&attr, url);

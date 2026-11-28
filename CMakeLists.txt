@@ -53,7 +53,10 @@ if(NOT tinygltf_POPULATED)
     target_link_libraries(tinygltf PRIVATE stb::stb)
 endif()
 
-add_executable(App 
+add_executable(App
+    tile_cache.h
+    lookout_define.h
+    lookout_struct.h
     main.cpp
     application.h
     application.cpp

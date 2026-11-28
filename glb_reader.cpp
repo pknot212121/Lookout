@@ -137,7 +137,7 @@ void GlbReader::processNode(uint32_t nodeIdx, const glm::mat4& parentMatrix)
 
         for (size_t i = 0; i < posAcc->count; i++)
         {
-            gpuUtils::VertexAttributes vert{};
+            VertexAttributes vert{};
             glm::vec4 localPos(posPtr[i * posStride + 0], posPtr[i * posStride + 1], posPtr[i * posStride + 2], 1.0f);
             vert.position = glm::vec3(worldMatrix * localPos);
 

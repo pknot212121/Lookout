@@ -14,34 +14,10 @@
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
+#include "lookout_struct.h"
 
 namespace gpuUtils
 {
-    struct TextureResource
-    {
-        wgpu::Texture texture;
-        wgpu::TextureView view;
-        wgpu::Sampler sampler;
-    };
-
-    struct VertexAttributes
-    {
-        glm::vec3 position;
-        glm::vec3 normal;
-        glm::vec2 uv;
-    };
-
-    struct TileInstanceAttributes {
-        uint32_t z, x, y, layer;
-    };
-
-    struct MyUniforms
-    {
-        glm::mat4x4 projectionMatrix;
-        glm::mat4x4 viewMatrix;
-    };
-    static_assert(sizeof(MyUniforms) % 16 == 0);
-
     TextureResource createTextureFromBytes(
         const wgpu::Device& device,
         const uint8_t* data,
@@ -57,6 +33,9 @@ namespace gpuUtils
         uint32_t layerCount,
         wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm
     );
+
+    void clearAllLayers(const wgpu::Device& device, const wgpu::Texture& texture,
+                    uint32_t layerCount, wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8Unorm);
 
     void writeTextureLayer(
         const wgpu::Device& device,
